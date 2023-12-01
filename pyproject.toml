@@ -7,7 +7,7 @@ name = 's3_reader'
 authors = [
     { name = "randomseed42", email = "randomseed42@protonmail.com" },
 ]
-description = "A wrapper of boto3 which helps listing and reading AWS S3 files."
+description = "A wrapper of boto3 which helps to list and read AWS S3 files."
 dependencies = [
     "boto3",
     "mypy-boto3-s3",
