@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = 's3_reader'
+authors = [
+    { name = "randomseed42", email = "randomseed42@protonmail.com" },
+]
+description = "A wrapper of boto3 which helps listing and reading AWS S3 files."
+dependencies = [
+    "boto3",
+    "mypy-boto3-s3",
+    "python-dotenv",
+    "tqdm",
+]
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dynamic = ["version"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Internet",
+]
+
+[project.urls]
+Homepage = "https://github.com/randomseed42/s3_reader"
+Documentation = "https://github.com/randomseed42/s3_reader"
+
+[project.scripts]
+s3r = "s3_reader:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "s3_reader.__version__" }
