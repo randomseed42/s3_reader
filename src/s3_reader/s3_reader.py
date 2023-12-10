@@ -18,7 +18,7 @@ AWS_REGION_NAME = os.getenv('AWS_REGION_NAME', 'cn-north-1')
 
 def create_s3_client() -> S3Client:
     """
-    Create a AWS S3 client.
+    Create an AWS S3 client.
     :return: client: S3Client
     """
     session = boto3.Session(profile_name=AWS_PROFILE_NAME, region_name=AWS_REGION_NAME)
@@ -39,23 +39,17 @@ def list_keys_by_prefix(
     :param prefix: AWS S3 file prefix
     :return: list of AWS S3 files' full path
     """
-    keys: list[str] = []
-    continuation_token: str | None = None
-    while True:
-        if continuation_token is None:
-            resp = client.list_objects_v2(Bucket=bucket, Prefix=prefix)
-        else:
+    try:
+        resp = client.list_objects_v2(Bucket=bucket, Prefix=prefix)
+        keys: list[str] = [content.get('Key') for content in resp.get('Contents', [])]
+
+        while continuation_token := resp.get('NextContinuationToken'):
             resp = client.list_objects_v2(Bucket=bucket, Prefix=prefix, ContinuationToken=continuation_token)
-
-        contents = resp.get('Contents')
-        if contents:
-            keys += [content.get('Key') for content in contents]
-
-        if resp.get('IsTruncated'):
-            continuation_token = resp.get('NextContinuationToken')
-        else:
-            break
-    return keys
+            keys.extend(content.get('Key') for content in resp.get('Contents', []))
+        return keys
+    except Exception as err:
+        print(f'Error {err}')
+        return []
 
 
 def list_keys_by_prefixes(
@@ -72,16 +66,18 @@ def list_keys_by_prefixes(
     """
     if len(prefixes) > 0:
         client = create_s3_client()
-        func: Callable = partial(list_keys_by_prefix, client, bucket)
-        max_workers = 16
-        keys = []
+        try:
+            func: Callable = partial(list_keys_by_prefix, client, bucket)
+            max_workers = 16
+            keys = []
 
-        with ThreadPoolExecutor(min(max_workers, len(prefixes))) as executor:
-            jobs = [executor.submit(func, prefix) for prefix in prefixes]
-            jobs_iter = tqdm(as_completed(jobs), total=len(prefixes))
-            for job in jobs_iter:
-                keys += job.result()
-        client.close()
+            with ThreadPoolExecutor(min(max_workers, len(prefixes))) as executor:
+                jobs = [executor.submit(func, prefix) for prefix in prefixes]
+                jobs_iter = tqdm(as_completed(jobs), total=len(prefixes))
+                for job in jobs_iter:
+                    keys.extend(job.result())
+        finally:
+            client.close()
         return keys
 
 
@@ -107,9 +103,11 @@ def download_by_key(
             buf.seek(0)
             data = buf.read()
             if output_format == 'dict':
-                return {key: data.decode(encoding='utf-8')}
-            if output_format == 'bytes':
+                return {key: json.loads(data)}
+            elif output_format == 'bytes':
                 return data
+            else:
+                raise ValueError('output_format must be "dict" or "bytes"')
     except Exception as err:
         print(err)
         return
@@ -119,7 +117,7 @@ def download_by_keys(
         bucket: str,
         keys: list[str],
         output_format: Literal['dict', 'bytes'] = 'dict'
-) -> list[dict]:
+) -> list[dict | bytes]:
     """
     Download many AWS S3 files per the bucket and keys (file full path).
     Return a list of dict, for each item the key is the file full path and value is the data in the file.
@@ -131,14 +129,16 @@ def download_by_keys(
     """
     if len(keys) > 0:
         client = create_s3_client()
-        func: Callable = partial(download_by_key, client, bucket, output_format=output_format)
-        max_workers = 16
-        data = []
+        try:
+            func: Callable = partial(download_by_key, client, bucket, output_format=output_format)
+            max_workers = 16
+            data = []
 
-        with ThreadPoolExecutor(min(max_workers, len(keys))) as executor:
-            jobs = [executor.submit(func, key) for key in keys]
-            jobs_iter = tqdm(as_completed(jobs), total=len(keys))
-            for job in jobs_iter:
-                data.append(job.result())
-        client.close()
+            with ThreadPoolExecutor(min(max_workers, len(keys))) as executor:
+                jobs = [executor.submit(func, key) for key in keys]
+                jobs_iter = tqdm(as_completed(jobs), total=len(keys))
+                for job in jobs_iter:
+                    data.append(job.result())
+        finally:
+            client.close()
         return data
