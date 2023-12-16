@@ -73,7 +73,7 @@ def list_keys_by_prefixes(
 
             with ThreadPoolExecutor(min(max_workers, len(prefixes))) as executor:
                 jobs = [executor.submit(func, prefix) for prefix in prefixes]
-                jobs_iter = tqdm(as_completed(jobs), total=len(prefixes))
+                jobs_iter = tqdm(as_completed(jobs), total=len(prefixes), desc='List keys by prefixes')
                 for job in jobs_iter:
                     keys.extend(job.result())
         finally:
@@ -85,8 +85,9 @@ def download_by_key(
         client: S3Client,
         bucket: str,
         key: str,
-        output_format: Literal['dict', 'bytes'] = 'dict'
-) -> dict | bytes | None:
+        output_format: Literal['dict', 'bytes'] = 'dict',
+        output_dir: str | None = '',
+) -> dict | None:
     """
     Download a single AWS S3 file per the bucket and key (file full path).
     Return a dict which key is the file full path and value is the data in the file.
@@ -95,7 +96,8 @@ def download_by_key(
     :param bucket: AWS S3 Bucket
     :param key: AWS S3 file's full path
     :param output_format: dict or bytes
-    :return: {key: data}
+    :param output_dir: write to a directory if not None
+    :return: {key: json.loads(data)} or {key: data}
     """
     try:
         with BytesIO() as buf:
@@ -105,7 +107,11 @@ def download_by_key(
             if output_format == 'dict':
                 return {key: json.loads(data)}
             elif output_format == 'bytes':
-                return data
+                if output_dir is not None:
+                    os.makedirs(os.path.join(output_dir, os.path.dirname(key)), exist_ok=True)
+                    with open(os.path.join(output_dir, key), 'wb') as f:
+                        f.write(data)
+                return {key: data}
             else:
                 raise ValueError('output_format must be "dict" or "bytes"')
     except Exception as err:
@@ -116,8 +122,9 @@ def download_by_key(
 def download_by_keys(
         bucket: str,
         keys: list[str],
-        output_format: Literal['dict', 'bytes'] = 'dict'
-) -> list[dict | bytes]:
+        output_format: Literal['dict', 'bytes'] = 'dict',
+        output_dir: str | None = '',
+) -> dict[str, dict | bytes]:
     """
     Download many AWS S3 files per the bucket and keys (file full path).
     Return a list of dict, for each item the key is the file full path and value is the data in the file.
@@ -125,20 +132,45 @@ def download_by_keys(
     :param bucket: AWS S3 Bucket
     :param keys: list of AWS S3 file paths
     :param output_format: dict or bytes
+    :param output_dir: write to a directory if not None
     :return: list of {key: data}
     """
     if len(keys) > 0:
         client = create_s3_client()
         try:
-            func: Callable = partial(download_by_key, client, bucket, output_format=output_format)
+            func: Callable = partial(download_by_key, client, bucket,
+                                     output_format=output_format, output_dir=output_dir)
             max_workers = 16
-            data = []
+            data = {}
 
             with ThreadPoolExecutor(min(max_workers, len(keys))) as executor:
                 jobs = [executor.submit(func, key) for key in keys]
-                jobs_iter = tqdm(as_completed(jobs), total=len(keys))
+                jobs_iter = tqdm(as_completed(jobs), total=len(keys), desc='Download file by keys')
                 for job in jobs_iter:
-                    data.append(job.result())
+                    data.update(job.result())
         finally:
             client.close()
         return data
+
+
+def download_by_prefixes(
+        bucket: str,
+        prefixes: list[str],
+        output_format: Literal['dict', 'bytes'] = 'dict',
+        output_dir: str | None = '',
+) -> dict[str, dict | bytes]:
+    """
+    Download many AWS S3 files per the bucket and prefixes.
+    First get the keys as a list, then download the keys and return a dict with {key: data},
+    data format is decided by output_format.
+    If output_format is bytes, the data will be written in a folder
+    per the dirname of the key under current working directory.
+    :param bucket: AWS S3 Bucket
+    :param prefixes: list of AWS S3 file prefix
+    :param output_format: dict or bytes
+    :param output_dir: write to a directory if not None
+    :return: dict[]
+    """
+    keys = list_keys_by_prefixes(bucket=bucket, prefixes=prefixes)
+    data = download_by_keys(bucket=bucket, keys=keys, output_format=output_format, output_dir=output_dir)
+    return data

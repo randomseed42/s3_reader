@@ -1,6 +1,6 @@
 import argparse
 
-from .s3_reader import list_keys_by_prefixes, download_by_keys
+from .s3_reader import download_by_keys, download_by_prefixes, list_keys_by_prefixes
 
 
 def main():
@@ -13,8 +13,10 @@ def main():
 
     parser_download = subparser.add_parser('s3download', help='Get AWS S3 files data')
     parser_download.add_argument('-b', '--bucket', required=True, help='AWS bucket name')
-    parser_download.add_argument('-k', '--keys', nargs='+', required=True, help='AWS file key name')
-    parser_download.add_argument('-f', '--output_format', choices=['dict', 'bytes'], help='AWS files output format')
+    parser_download_group = parser_download.add_mutually_exclusive_group(required=True)
+    parser_download_group.add_argument('-k', '--keys', nargs='+', help='AWS file key name')
+    parser_download_group.add_argument('-p', '--prefixes', nargs='+', help='AWS file prefix name')
+    parser_download.add_argument('-d', '--output_dir', default='', help='Download target directory')
 
     args = parser.parse_args()
 
@@ -25,13 +27,21 @@ def main():
         )
         print(keys)
     elif args.func == 's3download':
-        if args.output_format not in ['dict', 'bytes']:
-            raise ValueError('output_format must be "dict" or "bytes"')
-        output = download_by_keys(
-            bucket=args.bucket,
-            keys=args.keys,
-            output_format=args.output_format,
-        )
-        print(output)
+        if args.keys:
+            download_by_keys(
+                bucket=args.bucket,
+                keys=args.keys,
+                output_format='bytes',
+                output_dir=args.output_dir,
+            )
+        elif args.prefixes:
+            download_by_prefixes(
+                bucket=args.bucket,
+                prefixes=args.prefixes,
+                output_format='bytes',
+                output_dir=args.output_dir,
+            )
+        else:
+            raise ValueError(f'--keys or --prefixes argument is required.')
     else:
         raise ValueError(f'Invalid command {args.func}')
