@@ -53,6 +53,35 @@ def list_prefixes_by_prefix(
         return []
 
 
+def list_prefixes_by_prefixes(
+        bucket: str,
+        prefixes: list[str],
+) -> list[str]:
+    """
+    List prefixes (next level folders) in a S3 bucket with multiple file prefixes.
+    Use concurrent with max 16 workers to speed up.
+    Reuse same client to avoid cost of create and close a client.
+    :param bucket: AWS S3 Bucket
+    :param prefixes: list of AWS S3 file prefix
+    :return: list of AWS S3 prefixes' full path
+    """
+    if len(prefixes) > 0:
+        client = create_s3_client()
+        try:
+            func: Callable = partial(list_prefixes_by_prefix, client, bucket)
+            max_workers = 16
+            sub_level_prefixes = []
+
+            with ThreadPoolExecutor(min(max_workers, len(prefixes))) as executor:
+                jobs = [executor.submit(func, prefix) for prefix in prefixes]
+                jobs_iter = tqdm(as_completed(jobs), total=len(prefixes), desc='List prefixes by prefixes')
+                for job in jobs_iter:
+                    sub_level_prefixes.extend(job.result())
+        finally:
+            client.close()
+        return sub_level_prefixes
+
+
 def list_keys_by_prefix(
         client: S3Client,
         bucket: str,
