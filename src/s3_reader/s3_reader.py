@@ -26,6 +26,33 @@ def create_s3_client() -> S3Client:
     return client
 
 
+def list_prefixes_by_prefix(
+        client: S3Client,
+        bucket: str,
+        prefix: str,
+) -> list[str]:
+    """
+    List prefixes (next level folders) in a S3 bucket with a single file prefix, each key is a file's full path.
+    Each list_objects_v2 request returns max 1000 keys, so use a while loop to get all keys under the prefix.
+    :param client: S3Client
+    :param bucket: AWS S3 Bucket
+    :param prefix: AWS S3 file prefix
+    :return: list of AWS S3 prefixes' full path
+    """
+    try:
+        resp = client.list_objects_v2(Bucket=bucket, Prefix=prefix, Delimiter='/')
+        prefixes: list[str] = [common_prefixes.get('Prefix') for common_prefixes in resp.get('CommonPrefixes', [])]
+
+        while continuation_token := resp.get('NextContinuationToken'):
+            resp = client.list_objects_v2(Bucket=bucket, Prefix=prefix, Delimiter='/',
+                                          ContinuationToken=continuation_token)
+            prefixes.extend(common_prefixes.get('Prefix') for common_prefixes in resp.get('CommonPrefixes', []))
+        return prefixes
+    except Exception as err:
+        print(f'Error {err}')
+        return []
+
+
 def list_keys_by_prefix(
         client: S3Client,
         bucket: str,
